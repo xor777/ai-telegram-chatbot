@@ -132,5 +132,5 @@ while True:
 
     except Exception as e:
         logging.error(f"Bot stopped with exception {e}")
-        time.sleep(3)
+        time.sleep(5)
         logging.info("Restarting bot due to error")
