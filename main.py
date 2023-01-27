@@ -3,6 +3,7 @@ import openai
 import datetime
 import logging
 import os
+import time
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -10,15 +11,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 load_dotenv()
 
 try:
-    telegram_bot_api_key = os.environ["TELEGRAM_BOT_KEY"]
-    bot = telebot.TeleBot(telegram_bot_api_key)
+    bot = telebot.TeleBot(os.environ["TELEGRAM_BOT_KEY"])
 except Exception as e:
-    logging.error(f"Error initialising bot - {e}")
+    logging.error(f"Error initialising Telegram API - {e}")
     raise SystemExit(0)
 
 try:
-    open_ai_api_key = os.environ["OPEN_AI_KEY"]
-    openai.api_key = open_ai_api_key
+    openai.api_key = os.environ["OPEN_AI_KEY"]
 except Exception as e:
     logging.error(f"Error initialising OpenAI API - {e}")
     raise SystemExit(0)
@@ -103,7 +102,6 @@ def answer_question(message):
         )
 
         response_text = response['choices'][0]['text']
-        response_text = response_text.strip()
         logging.info(f"Got response from OpenAI API for user {message_from}")
 
     except Exception as e:
@@ -125,5 +123,14 @@ def answer_question(message):
         bot.reply_to(message, "API returned empty response 🤔")
         logging.error(f"API returned empty response for user {message_from}")
 
-logging.info('Bot started')
-bot.polling()
+
+logging.info('Bot initialized')
+while True:
+    try:
+        bot.polling()
+        break
+
+    except Exception as e:
+        logging.error(f"Bot stopped with exception {e}")
+        time.sleep(3)
+        logging.info("Restarting bot due to error")
