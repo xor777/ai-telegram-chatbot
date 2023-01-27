@@ -4,7 +4,24 @@ import datetime
 import logging
 import os
 import time
+import argparse
+import json
+
 from dotenv import load_dotenv
+
+
+def is_user_allowed(message_from):
+    try:
+        next(user for user in allowed_users if user["username"] == message_from)
+        return True
+    except StopIteration:
+        return False
+
+
+def dump_users():
+    with open(allowed_users_config, "w") as f:
+        json.dump(allowed_users, f)
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -22,27 +39,40 @@ except Exception as e:
     logging.error(f"Error initialising OpenAI API - {e}")
     raise SystemExit(0)
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-admin", help="specify admin username")
+args = parser.parse_args()
+
+if args.admin:
+    admin_username = args.admin
+else:
+    admin_username = input("Enter bot admin telegram user name:")
+
+if not admin_username:
+    logging.error("No admin specified. Use -admin argument or enter manually")
+    raise SystemExit(0)
+else:
+    admin_username = admin_username.lstrip("@")
+    logging.info(f"Bot admin is {admin_username}")
+
+
 # only allowed users could use bot
 # any allowed user can add another user
-allowed_users = [
-    {
-        "username": "xor777"
-    },
-    {
-        "username": "nocool76"
-    },
-    {
-        "username": "Darya2203600"
-    }
-]
-
-
-def is_user_allowed(message_from):
+allowed_users_config = "allowed_users.json"
+allowed_users = []
+if os.path.exists(allowed_users_config):
     try:
-        next(user for user in allowed_users if user["username"] == message_from)
-        return True
-    except StopIteration:
-        return False
+        with open(allowed_users_config,"r") as f:
+            allowed_users = json.load(f)
+    except:
+        logging.error("Error parsing allowed_users.json, it will be reinitialised")
+
+if len(allowed_users) == 0:
+    allowed_users = [{"username": admin_username}]
+    dump_users()
+
+logging.info(f"Allowed users is: {', '.join([user['username'] for user in allowed_users])}")
 
 
 @bot.message_handler(commands=['start'])
@@ -58,6 +88,7 @@ def handle_add_user(message):
         return
 
     new_username = message.text.split(" ")[1]
+    new_username = new_username.lstrip("@")
     if new_username:
         new_user = {"username": new_username}
         allowed_users.append(new_user)
@@ -65,6 +96,7 @@ def handle_add_user(message):
         logging.info(
             f"[{datetime.datetime.now()}] {message.from_user.username} added {new_username} to the list of allowed "
             f"users.")
+        dump_users()
     else:
         bot.send_message(message.chat.id, "Invalid command format. Please use /add_user @username")
 
@@ -127,6 +159,7 @@ def answer_question(message):
 logging.info('Bot initialized')
 while True:
     try:
+        logging.info("Bot started")
         bot.polling()
         break
 
