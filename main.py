@@ -1,5 +1,4 @@
 import telebot
-import openai
 import datetime
 import logging
 import os
@@ -7,6 +6,7 @@ import time
 import argparse
 import json
 from dotenv import load_dotenv
+from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -25,8 +25,8 @@ def is_user_allowed(message):
 
 
 def dump_users():
-    with open(allowed_users_config, "w") as f:
-        json.dump(allowed_users, f)
+    with open(allowed_users_config, "w") as file:
+        json.dump(allowed_users, file)
 
 
 try:
@@ -36,7 +36,7 @@ except Exception as e:
     raise SystemExit(0)
 
 try:
-    openai.api_key = os.environ["OPEN_AI_KEY"]
+    client = OpenAI(api_key=os.environ["OPEN_AI_KEY"])
 except Exception as e:
     logging.error(f"Error initialising OpenAI API - {e}")
     raise SystemExit(0)
@@ -49,8 +49,8 @@ if os.path.exists(allowed_users_config):
     try:
         with open(allowed_users_config, "r") as f:
             allowed_users = json.load(f)
-    except:
-        logging.error("Error parsing allowed_users.json, it will be reinitialised")
+    except Exception as e:
+        logging.error(f"Error parsing allowed_users.json: {str(e)}, it will be reinitialised")
 
 if len(allowed_users) == 0:
     parser = argparse.ArgumentParser()
@@ -78,7 +78,7 @@ logging.info(f"Allowed users is: {', '.join([user['username'] for user in allowe
 @bot.message_handler(commands=['start'])
 def start(message):
     if is_user_allowed(message):
-        bot.reply_to(message, 'Hi! This bot is just an interface to GPT-3. You can ask anything either english or russian '
+        bot.reply_to(message, 'Hi! This bot is just an interface to GPT-4. You can ask anything either english or russian '
                               '(or even any language you know). Use /help command to get help. Enjoy!')
 
 
@@ -115,6 +115,7 @@ def handle_help(message):
                                       "/help - this help\n"
                                       "/forget_all - reset all previous context")
 
+
 @bot.message_handler(commands=['forget_all'])
 def handle_clear_context(message):
     if not is_user_allowed(message):
@@ -127,71 +128,60 @@ def handle_clear_context(message):
             logging.info(f"Context cleared for user {message_from}")
             bot.send_message(message.chat.id, "Everything is forgotten 🧠❌")
 
+
 @bot.message_handler(func=lambda message: True)
 def answer_question(message):
     if not is_user_allowed(message):
         return
 
     message_from = message.from_user.username
-    start_sequence = " AI:"
-    restart_sequence = " Human:"
-    dialogue = []
-    prompt = ""
+    dialogue_history = []
 
-    # update last message time and get previous dialogue
     for user in allowed_users:
         if user["username"] == message_from:
-            user["last_message"] = str(datetime.datetime.now())
-
-            # need to keep all user's dialogue to maintain the context
-            # that's how GPT3 works. you should use text completion call to do the human like chat
-            # send the previous dialogue and ask GPT3 to complete text considering last question
-            dialogue = user.get("dialogue", [])
-            dialogue.append(f"{restart_sequence}{message.text}")
-            prompt = f"{''.join(dialogue)}{start_sequence}"
+            dialogue_history = user.get("dialogue", [])
             break
 
+    dialogue_history.append({"role": "user", "content": message.text})
+
     try:
-        response = openai.Completion.create(
-            model="text-davinci-003",
-            prompt=prompt,
-            temperature=0.9,
-            max_tokens=1000,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0.6,
-            stop=[restart_sequence, start_sequence]
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=dialogue_history,
+            max_tokens=1000
         )
 
-        response_text = response['choices'][0]['text']
-        dialogue.append(f"{start_sequence}{response_text}")
+        response_text = response.choices[0].message.content
+
+        dialogue_history.append({"role": "assistant", "content": response_text})
 
         logging.info(f"Got response from OpenAI API for user {message_from}")
-        total_tokens = response['usage']['total_tokens']
+        total_tokens = response.usage.total_tokens
         logging.info(f"Total tokens used: {total_tokens}")
 
-        # OpenAI API has a restriction of only 4096 tokens, so we use 1000 for response and trying to keep
-        # total (max_tokens+total_tokens) below the limitation to avoid error by removing first two
-        # elements of context (prompt and answer)
-        # if dialogue is short (less then 2), then just clear it all
-        # TODO: Write more accurate calculation for this limitation
-        #  e.g. adjust response max_tokens depending on remaining space
-        #  because in some situations it doesn't work fine
+        avg_token_length = 4
+        max_token_limit = 4096
+        current_token_count = sum(len(item["content"]) / avg_token_length for item in dialogue_history)
 
-        if total_tokens > 2500:
-            if len(dialogue) > 2:
-                del dialogue[0:2]
-                logging.info(f"Context is trimmed")
-            else:
-                dialogue = []
+        while current_token_count > max_token_limit:
+            removed = dialogue_history.pop(0)
+            logging.debug(f"User: {message_from}, Removed context: {removed}")
+            current_token_count -= len(removed["content"]) / avg_token_length
 
-        user['dialogue'] = dialogue
+        for user in allowed_users:
+            if user["username"] == message_from:
+                user["dialogue"] = dialogue_history
+                break
+
+        for user in allowed_users:
+            if user["username"] == message_from:
+                user["dialogue"] = dialogue_history
+                break
 
     except Exception as e:
-        response_text = f"An error occured while processing your dialogue:\n{e}\nPlease contact bot admin"
-        logging.error(f"Got an exception {e} while requestiong OpenAI API")
+        response_text = f"An error occurred while processing your dialogue:\n{e}\nPlease contact bot admin"
+        logging.error(f"Got an exception {str(e)} while requesting OpenAI API")
 
-    logging.info(f"Sending response to {message.from_user.username}")
     if len(response_text) > 0:
         bot.reply_to(message, response_text)
     else:
