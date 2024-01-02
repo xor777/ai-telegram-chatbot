@@ -5,13 +5,13 @@ import os
 import time
 import argparse
 import json
+from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 load_dotenv()
-
 
 def is_user_allowed(message):
     message_from = message.from_user.username
@@ -87,19 +87,20 @@ def handle_add_user(message):
     if not is_user_allowed(message):
         return
 
-    new_username = message.text.split(" ")[1]
-    new_username = new_username.lstrip("@")
-    if new_username:
-        new_user = {"username": new_username}
-        allowed_users.append(new_user)
-        bot.send_message(message.chat.id, f"{new_username} has been added to the list of allowed users.")
-        logging.info(
-            f"[{datetime.datetime.now()}] {message.from_user.username} added {new_username} to the list of allowed "
-            f"users.")
-        dump_users()
-    else:
+    new_username = message.text.split(" ")[1].lstrip("@")
+    if not new_username:
         bot.send_message(message.chat.id, "Invalid command format. Please use /add_user @username")
+        return
 
+    if any(user["username"] == new_username for user in allowed_users):
+        bot.send_message(message.chat.id, f"{new_username} is already in the list of allowed users.")
+        return
+
+    new_user = {"username": new_username}
+    allowed_users.append(new_user)
+    bot.send_message(message.chat.id, f"{new_username} has been added to the list of allowed users.")
+    logging.info(f"[{datetime.datetime.now()}] {message.from_user.username} added {new_username} to the list of allowed users.")
+    dump_users()
 
 @bot.message_handler(commands=['help'])
 def handle_help(message):
@@ -130,7 +131,7 @@ def handle_clear_context(message):
 
 
 @bot.message_handler(func=lambda message: True)
-def answer_question(message):
+def answer_question(message, transcript=''):
     if not is_user_allowed(message):
         return
 
@@ -142,7 +143,9 @@ def answer_question(message):
             dialogue_history = user.get("dialogue", [])
             break
 
-    dialogue_history.append({"role": "user", "content": message.text})
+    message_text = message.text if not transcript else transcript
+
+    dialogue_history.append({"role": "user", "content": message_text})
 
     try:
         response = client.chat.completions.create(
@@ -183,13 +186,66 @@ def answer_question(message):
         logging.error(f"Got an exception {str(e)} while requesting OpenAI API")
 
     if len(response_text) > 0:
-        bot.reply_to(message, response_text)
+        if transcript:
+            file_name = f'answer_{message.id}.ogg'
+            synthesized_answer = Path(__file__).parent / file_name
+            response = client.audio.speech.create(
+                model='tts-1',
+                voice='alloy',
+                input=response_text
+            )
+            response.stream_to_file(synthesized_answer)
+
+            with open(synthesized_answer, 'rb') as audio:
+                bot.send_voice(message.chat.id, audio)
+
+            synthesized_answer.unlink()
+
+        else:
+            bot.reply_to(message, response_text)
     else:
         bot.reply_to(message, "API returned empty response 🤔")
         logging.error(f"API returned empty response for user {message_from}")
 
 
+@bot.message_handler(content_types=['voice'])
+def handle_voice(message):
+    if not is_user_allowed(message):
+        return
+
+    try:
+        voice = bot.get_file(message.voice.file_id)
+        voice_data = bot.download_file(voice.file_path)
+
+        saved_file_name = f'voice_message_{message.message_id}.ogg'
+        with open(saved_file_name, "wb") as new_file:
+            new_file.write(voice_data)
+
+        logging.info(f'{saved_file_name} saved')
+
+        with open(saved_file_name, 'rb') as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model='whisper-1',
+                file=audio_file,
+                response_format='text'
+            )
+
+        answer_question(message, transcript)
+
+    except IOError as e:
+        logging.error(f"File operation error: {str(e)}")
+    except Exception as e:
+        logging.error(f"Voice message handling error: {str(e)}")
+    finally:
+        try:
+            os.remove(saved_file_name)
+        except Exception as e:
+            logging.error(f"Error deleting file: {str(e)}")
+
+
 logging.info('Bot initialized')
+
+
 while True:
     try:
         logging.info("Bot started")
