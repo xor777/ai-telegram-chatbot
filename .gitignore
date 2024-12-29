@@ -16,3 +16,6 @@ ENV/
 
 # Project specific
 allowed_users.json
+
+# Explicitly keep prompts
+!chat/prompts/system_prompt.txt

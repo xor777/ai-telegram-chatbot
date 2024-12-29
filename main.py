@@ -168,7 +168,7 @@ class Bot:
             "/help - Show this help message\n"
             "/forget_all - Clear conversation history\n"
             "/add_user - Add new user (admin only). Example: /add_user username\n\n"
-            "You can send text or voice messages, and I'll respond accordingly.\n"
+            "You can send text or voice messages, and I'll respond accordingly."
             "Voice messages will be transcribed and processed, and you'll get both voice and text responses."
         )
         
