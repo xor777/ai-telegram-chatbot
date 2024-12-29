@@ -7,6 +7,8 @@ from openai import OpenAI
 from chat.chain_manager import ChainManager
 from user_management import UserManager
 
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 class Bot:
@@ -73,7 +75,7 @@ class Bot:
             await update.message.chat.send_chat_action(action="typing")
             
             logging.info(f"[{username}] Requesting AI response")
-            response = self.chain_manager.get_response(update.message.from_user.username, transcript)
+            response = self.chain_manager.get_response(username, transcript)
             logging.info(f"[{username}] Got response from AI")
             
             await self._handle_voice_response(update.message, response)
@@ -133,13 +135,53 @@ class Bot:
             if synthesized_answer.exists():
                 synthesized_answer.unlink()
 
-    def run(self):
-        load_dotenv()
+    async def add_user(self, update, context):
+        if not self.user_manager.is_user_allowed(update.message):
+            return
+            
+        username = update.message.from_user.username
         
+        if not context.args:
+            await update.message.reply_text("Please specify username to add. Example: /add_user username")
+            return
+            
+        new_username = context.args[0].lstrip("@")
+        logging.info(f"[{username}] Attempting to add new user: {new_username}")
+        
+        if self.user_manager.add_user(new_username):
+            await update.message.reply_text(f"User @{new_username} added successfully")
+            logging.info(f"[{username}] Successfully added user: {new_username}")
+        else:
+            await update.message.reply_text(f"User @{new_username} is already in the allowed list")
+            logging.info(f"[{username}] Failed to add user (already exists): {new_username}")
+
+    async def help(self, update, context):
+        if not self.user_manager.is_user_allowed(update.message):
+            return
+            
+        username = update.message.from_user.username
+        logging.info(f"[{username}] Requested help")
+        
+        help_text = (
+            "Available commands:\n"
+            "/start - Start the bot\n"
+            "/help - Show this help message\n"
+            "/forget_all - Clear conversation history\n"
+            "/add_user - Add new user (admin only). Example: /add_user username\n\n"
+            "You can send text or voice messages, and I'll respond accordingly.\n"
+            "Voice messages will be transcribed and processed, and you'll get both voice and text responses."
+        )
+        
+        await update.message.reply_text(help_text)
+        logging.info(f"[{username}] Sent help message")
+
+    def run(self):
         application = Application.builder().token(os.environ["TELEGRAM_BOT_KEY"]).build()
 
         application.add_handler(CommandHandler("start", self.start))
+        application.add_handler(CommandHandler("help", self.help))
         application.add_handler(CommandHandler("forget_all", self.forget_all))
+        application.add_handler(CommandHandler("add_user", self.add_user))
         application.add_handler(MessageHandler(filters.VOICE & ~filters.COMMAND, self.handle_voice))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
@@ -147,7 +189,6 @@ class Bot:
         application.run_polling()
 
 def main():
-    load_dotenv()
     bot = Bot()
     bot.run()
 
