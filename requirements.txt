@@ -1,0 +1,8 @@
+python-telegram-bot
+python-dotenv
+openai
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
+langchain-openai 
