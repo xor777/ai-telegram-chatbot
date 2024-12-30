@@ -11,6 +11,9 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(os.environ.get("HTTPX_LOG_LEVEL", "WARNING"))
+
 class Bot:
     def __init__(self):
         self.chain_manager = ChainManager(os.environ["OPEN_AI_KEY"])

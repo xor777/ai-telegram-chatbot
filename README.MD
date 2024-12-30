@@ -25,6 +25,9 @@ echo CHAT_MODEL_MAX_TOKENS=1000 >> .env
 echo VOICE_TO_TEXT_MODEL=whisper-1 >> .env
 echo TEXT_TO_SPEECH_MODEL=tts-1 >> .env
 echo TEXT_TO_SPEECH_VOICE=alloy >> .env
+
+# Optional: disable httpx logging
+echo HTTPX_LOG_LEVEL=WARNING >> .env
 ```
 
 ### 2. Dependencies
@@ -49,4 +52,9 @@ python main.py -admin your_telegram_username
 - `/help` - Show help message
 - `/forget_all` - Clear conversation history
 - `/add_user` - Add new user (admin only)
+
+## Logging Configuration
+By default, the bot logs all HTTP requests to Telegram API. To reduce logging output:
+1. Set `HTTPX_LOG_LEVEL=WARNING` in your `.env` file to show only warnings and errors
+2. Or set `HTTPX_LOG_LEVEL=ERROR` to show only errors
 
