@@ -1,5 +1,6 @@
 import logging
 import os
+import argparse
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from pathlib import Path
 from dotenv import load_dotenv
@@ -15,21 +16,47 @@ httpx_logger = logging.getLogger("httpx")
 httpx_logger.setLevel(os.environ.get("HTTPX_LOG_LEVEL", "WARNING"))
 
 class Bot:
-    def __init__(self):
-        self.chain_manager = ChainManager(os.environ["DEEPSEEK_API_KEY"])
+    def __init__(self, ai_provider: str):
+        if ai_provider == "deepseek":
+            api_key = os.environ["DEEPSEEK_API_KEY"]
+            base_url = "https://api.deepseek.com/v1"
+            model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+        else:  # openai
+            api_key = os.environ["OPEN_AI_KEY"]
+            base_url = None  # Use default OpenAI URL
+            model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+            
+        self.chain_manager = ChainManager(api_key, base_url, model)
         self.openai_client = OpenAI(
-            api_key=os.environ["DEEPSEEK_API_KEY"],
-            base_url="https://api.deepseek.com/v1"
+            api_key=api_key,
+            base_url=base_url
         )
         self.user_manager = UserManager()
+        self.ai_provider = ai_provider
+        self.model = model
+        
+        logging.info(f"AI Provider: {self.ai_provider.upper()}")
+        logging.info(f"Model: {self.model}")
+        logging.info(f"Max tokens: {os.environ.get('CHAT_MODEL_MAX_TOKENS', '1000')}")
+        logging.info(f"Base URL: {base_url if base_url else 'default OpenAI'}")
+        
+    def _get_config_text(self) -> str:
+        return (
+            "Current configuration:\n"
+            f"AI Provider: {self.ai_provider.upper()}\n"
+            f"Model: {self.model}\n"
+            f"Max tokens: {os.environ.get('CHAT_MODEL_MAX_TOKENS', '1000')}\n"
+            f"Base URL: {self.openai_client.base_url if self.openai_client.base_url else 'default OpenAI'}"
+        )
         
     async def start(self, update, context):
         if not self.user_manager.is_user_allowed(update.message):
             return
         await update.message.reply_text(
-            f'Hi! This bot is just an interface to AI models. Now it is working with {os.environ["CHAT_MODEL"]} model. '
-            'You can ask anything in any language you know. '
-            'Use /help command to get help. Enjoy!'
+            f'Hi! This bot is using {self.ai_provider.upper()} ({self.model}) as AI provider.\n'
+            'You can ask anything in any language you know.\n'
+            'Use /help command to get help. Enjoy!\n\n'
+            f'{self._get_config_text()}'
         )
 
     async def forget_all(self, update, context):
@@ -174,7 +201,8 @@ class Bot:
             "/help - Show this help message\n"
             "/forget_all - Clear conversation history\n"
             "/add_user - Add new user (admin only). Example: /add_user username\n\n"
-            "You can send text messages and I'll respond accordingly."
+            "You can send text messages and I'll respond accordingly.\n\n"
+            f"{self._get_config_text()}"
         )
         
         await update.message.reply_text(help_text)
@@ -194,7 +222,17 @@ class Bot:
         application.run_polling()
 
 def main():
-    bot = Bot()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-admin", help="specify admin username")
+    parser.add_argument(
+        "-ai", 
+        choices=["openai", "deepseek"],
+        default="openai",
+        help="choose AI provider (default: openai)"
+    )
+    args = parser.parse_args()
+    
+    bot = Bot(args.ai)
     bot.run()
 
 if __name__ == "__main__":

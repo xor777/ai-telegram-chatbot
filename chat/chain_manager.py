@@ -7,12 +7,12 @@ from .memory_store import UserMemoryStore
 import logging
 
 class ChainManager:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, base_url: str = None, model_name: str = None):
         self.llm = ChatOpenAI(
-            model_name=os.environ.get("CHAT_MODEL", "deepseek-chat"),
+            model_name=model_name,
             openai_api_key=api_key,
             max_tokens=int(os.environ.get("CHAT_MODEL_MAX_TOKENS", "1000")),
-            base_url="https://api.deepseek.com/v1"
+            base_url=base_url
         )
         self.memory_store = UserMemoryStore()
         
