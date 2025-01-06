@@ -9,9 +9,10 @@ import logging
 class ChainManager:
     def __init__(self, api_key: str):
         self.llm = ChatOpenAI(
-            model_name=os.environ.get("CHAT_MODEL", "gpt-4o-mini"),
+            model_name=os.environ.get("CHAT_MODEL", "deepseek-chat"),
             openai_api_key=api_key,
-            max_tokens=int(os.environ.get("CHAT_MODEL_MAX_TOKENS", "1000"))
+            max_tokens=int(os.environ.get("CHAT_MODEL_MAX_TOKENS", "1000")),
+            base_url="https://api.deepseek.com/v1"
         )
         self.memory_store = UserMemoryStore()
         
